@@ -6,56 +6,87 @@
 //
 
 import SwiftUI
-import SwiftData
 
 struct ContentView: View {
-    @Environment(\.modelContext) private var modelContext
-    @Query private var items: [Item]
+    @StateObject private var mazeManager = InfiniteMazeManager()
+    
+    var body: some View {
+        GeometryReader { geometry in
+            let cellSize = geometry.size.height / CGFloat(mazeManager.chunkHeight)
+            
+            ZStack {
+                Color.black.ignoresSafeArea()
+                
+                HStack(spacing: 0) {
+                    ForEach(mazeManager.chunks) { chunk in
+                        MazeChunkView(chunk: chunk, cellSize: cellSize)
+                    }
+                }
+                .offset(x: mazeManager.scrollOffset)
+                
+                Circle()
+                    .fill(Color.red)
+                    .frame(width: cellSize * 0.7, height: cellSize * 0.7)
+                    .shadow(color: .red.opacity(0.8), radius: 10, x: 0, y: 0)
+                    .position(x: geometry.size.width / 4, y: geometry.size.height / 2)
+
+                VStack {
+                    Spacer()
+                    Button(action: {
+                        mazeManager.isPlaying ? mazeManager.pause() : mazeManager.play()
+                    }) {
+                        Image(systemName: mazeManager.isPlaying ? "pause.fill" : "play.fill")
+                            .font(.largeTitle)
+                            .padding()
+                            .background(Color.white.opacity(0.3))
+                            .clipShape(Circle())
+                    }
+                    .padding()
+                }
+            }
+            .foregroundColor(.white)
+            .ignoresSafeArea()
+            .onAppear {
+                mazeManager.play()
+            }
+            // This prevents the animation from stuttering when a chunk is added/removed
+            .animation(.linear(duration: 1/60), value: mazeManager.scrollOffset)
+        }
+    }
+}
+
+struct MazeChunkView: View {
+    let chunk: MazeChunk
+    let cellSize: CGFloat
 
     var body: some View {
-        NavigationSplitView {
-            List {
-                ForEach(items) { item in
-                    NavigationLink {
-                        Text("Item at \(item.timestamp, format: Date.FormatStyle(date: .numeric, time: .standard))")
-                    } label: {
-                        Text(item.timestamp, format: Date.FormatStyle(date: .numeric, time: .standard))
+        VStack(spacing: 0) {
+            ForEach(0..<chunk.grid[0].count, id: \.self) { y in
+                HStack(spacing: 0) {
+                    ForEach(0..<chunk.grid.count, id: \.self) { x in
+                        CellView(cell: chunk.grid[x][y], cellSize: cellSize)
                     }
                 }
-                .onDelete(perform: deleteItems)
-            }
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    EditButton()
-                }
-                ToolbarItem {
-                    Button(action: addItem) {
-                        Label("Add Item", systemImage: "plus")
-                    }
-                }
-            }
-        } detail: {
-            Text("Select an item")
-        }
-    }
-
-    private func addItem() {
-        withAnimation {
-            let newItem = Item(timestamp: Date())
-            modelContext.insert(newItem)
-        }
-    }
-
-    private func deleteItems(offsets: IndexSet) {
-        withAnimation {
-            for index in offsets {
-                modelContext.delete(items[index])
             }
         }
     }
 }
 
-#Preview {
-    ContentView()
-        .modelContainer(for: Item.self, inMemory: true)
+struct CellView: View {
+    let cell: MazeCell
+    let cellSize: CGFloat
+
+    var body: some View {
+        ZStack {
+            // Using Paths is more performant for drawing lines than stacking Shapes
+            Path { path in
+                if cell.topWall { path.move(to: .zero); path.addLine(to: .init(x: cellSize, y: 0)) }
+                if cell.bottomWall { path.move(to: .init(x: 0, y: cellSize)); path.addLine(to: .init(x: cellSize, y: cellSize)) }
+                if cell.leftWall { path.move(to: .zero); path.addLine(to: .init(x: 0, y: cellSize)) }
+                if cell.rightWall { path.move(to: .init(x: cellSize, y: 0)); path.addLine(to: .init(x: cellSize, y: cellSize)) }
+            }
+            .stroke(Color.cyan, lineWidth: 2)
+        }
+        .frame(width: cellSize, height: cellSize)
+    }
 }
