@@ -17,19 +17,25 @@ class InfiniteMazeManager: ObservableObject {
     // Configuration
     let chunkWidth: Int = 8
     let chunkHeight: Int = 8
-    let speed: CGFloat = 1.0
+    let speed: CGFloat = 2.0
+    let bufferChunks: Int = 2
     
     private var generator: MazeGenerator
     private var gameTimer: AnyCancellable?
+    private var cellSize: CGFloat = 0
+    private var chunkWidthInPoints: CGFloat = 0
+    private var removingChunk = false
     
     init() {
         self.generator = MazeGenerator(width: chunkWidth, height: chunkHeight)
+        self.cellSize = UIScreen.main.bounds.height / CGFloat(chunkHeight)
+        self.chunkWidthInPoints = CGFloat(chunkWidth) * cellSize
         setupInitialChunks()
     }
     
     private func setupInitialChunks() {
         var nextEntryY = chunkHeight / 2
-        for _ in 0..<4 {
+        for _ in 0..<(4 + bufferChunks) {
             let newChunk = generator.generateChunk(entryY: nextEntryY)
             chunks.append(newChunk)
             nextEntryY = newChunk.exitY
@@ -39,7 +45,7 @@ class InfiniteMazeManager: ObservableObject {
     func play() {
         guard !isPlaying else { return }
         isPlaying = true
-        gameTimer = Timer.publish(every: 1/60, on: .main, in: .common)
+        gameTimer = Timer.publish(every: 1/120, on: .main, in: .common)
             .autoconnect()
             .sink { [weak self] _ in
                 self?.update()
@@ -52,20 +58,39 @@ class InfiniteMazeManager: ObservableObject {
     }
     
     private func update() {
+        // Continuous scrolling
         scrollOffset -= speed
         
-        let cellSize = UIScreen.main.bounds.height / CGFloat(chunkHeight)
-        let firstChunkWidthInPoints = CGFloat(chunkWidth) * cellSize
-        
-        if abs(scrollOffset) >= firstChunkWidthInPoints {
-            chunks.removeFirst()
+        // Only manage chunks when we've scrolled far enough
+        if abs(scrollOffset) >= chunkWidthInPoints && !removingChunk {
+            removingChunk = true
             
-            if let lastChunk = chunks.last {
-                let newChunk = generator.generateChunk(entryY: lastChunk.exitY)
-                chunks.append(newChunk)
+            // Calculate exact alignment point for the offset
+            let exactChunkWidth = cellSize * CGFloat(chunkWidth)
+            let adjustedOffset = scrollOffset + exactChunkWidth
+            
+            // Perform operations in a transaction for visual consistency
+            //            withAnimation(.none)
+            //            {
+            // Remove first chunk
+            
+            if !chunks.isEmpty {
+                chunks.removeFirst()
+                print("(scrollOffset: \(scrollOffset), adjustedOffset: \(adjustedOffset))")
+                
+                // Add new chunk at the end
+                if let lastChunk = chunks.last {
+                    let newChunk = generator.generateChunk(entryY: lastChunk.exitY)
+                    chunks.append(newChunk)
+                }
+                
+                // Precisely adjust scroll offset
+                
+                scrollOffset = adjustedOffset
             }
             
-            scrollOffset += firstChunkWidthInPoints
+            removingChunk = false
+            //            }
         }
     }
 }
